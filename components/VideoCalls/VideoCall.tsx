@@ -41,9 +41,14 @@ export default function VideoCall(props: iVideoCallProps) {
   const onInit = async () => {
     try {
       await janusVideoCall.init({
+        bandwidth: {
+          // Decrease bandwidth and video/audio quality
+          // Set 0 for unlimited quality
+          audio: 32,
+          video: 64,
+        },
         setLovalVideoStream: (stream: any) => {
           console.log("setLovalVideoStream", stream);
-
           setSelfViewSrc(stream.toURL());
         },
         setRemoteVideoStream: (stream: any) => {
@@ -78,24 +83,8 @@ export default function VideoCall(props: iVideoCallProps) {
     }
   };
 
-  const onDoCall = async (toUser = `me2`) => {
-    // Call this user
-    janusVideoCall.setBitrate(128);
-    janusVideoCall.videocall.createOffer({
-      // We want bidirectional audio and video, plus data channels
-      tracks: [{ type: "audio", capture: true, recv: true }, { type: "video", capture: true, recv: true, simulcast: false }, { type: "data" }],
-      success: function (jsep: any) {
-        // console.debug("Got SDP!", jsep);
-
-        let body = { request: "call", username: toUser };
-        janusVideoCall.videocall.send({ message: body, jsep: jsep });
-        // Create a spinner waiting for the remote video
-        janusVideoCall.setBitrate(128);
-      },
-      error: function (error: any) {
-        console.error("WebRTC error...", error);
-      },
-    });
+  const onDoCall = async (toUser: string) => {
+    janusVideoCall.onDoCall(toUser);
   };
 
   if (!isInit) {

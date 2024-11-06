@@ -3,7 +3,18 @@
 // import { Janus } from "./janus";
 import { Janus } from "./janusLast";
 
-function setBandwidth(opt: { audio: number; video: number }, event: any) {
+interface iBandwidth {
+  audio: number;
+  video: number;
+}
+/**
+ * Update the bandwidth in SDP
+ * @param opt
+ * @param event
+ * @returns
+ * @example setBandwidth({ audio: 16, video: 64 }, jsep);
+ */
+function setBandwidth(opt: iBandwidth, event: any) {
   // console.info("sdp", event);
   // console.info("sdp old", event.sdp);
   //event.sdp = event.sdp.replace(/b=AS:[0-9]+\r\n/g, "") // CT | AS  https://tools.ietf.org/html/rfc4566#section-5.8
@@ -20,11 +31,9 @@ function setBandwidth(opt: { audio: number; video: number }, event: any) {
   }
 
   // console.info("sdp set bandwidth", { audio: opt.audio, video: opt.video });
-
   // console.info("sdp new", event.sdp);
   return event;
 }
-// setBandwidth({ audio: 16, video: 64 }, jsep);
 
 // Helper to escape XML tags
 function escapeXmlTags(value: string): string {
@@ -44,6 +53,17 @@ function randomString(len: number): string {
 }
 
 const iceServers = [{ urls: ["stun:stun.l.google.com:19302"] }];
+
+interface iJanusVideoCallProps {
+  setRemoteVideoStream: any;
+  onNewMediaState: any;
+  setLovalVideoStream: any;
+  onWaitingForAnswer: any;
+  onAcceptedCall: any;
+  onNewWebrtcState: any;
+  onIncomingCall: (allow: Function, hangup: Function) => void;
+  bandwidth?: iBandwidth;
+}
 export class JanusVideoCall {
   public videocall: any = null;
   private opaqueId = "videocalltest-" + randomString(12);
@@ -53,6 +73,13 @@ export class JanusVideoCall {
   private remoteTracks: any = {};
   private remoteVideos = 0;
   private bitrateTimer: any = null;
+
+  /**
+   * Default bandwidth
+   * Allow to decrease the traffic bandwidth
+   * By default, the bandwidth is set to 0, which means that the bandwidth is not limited
+   */
+  private bandwidth: iBandwidth = { audio: 0, video: 0 };
 
   private audioenabled = false;
   private videoenabled = false;
@@ -112,15 +139,38 @@ export class JanusVideoCall {
     return true;
   };
 
-  public init = async (props: {
-    setRemoteVideoStream: any; //
-    onNewMediaState: any; //
-    setLovalVideoStream: any;
-    onWaitingForAnswer: any;
-    onAcceptedCall: any;
-    onNewWebrtcState: any;
-    onIncomingCall: any;
-  }) => {
+  /**
+   * Call this user
+   * @param toUser - user name
+   * @returns
+   */
+  public onDoCall = async (toUser: string) => {
+    return new Promise((resolve, reject) => {
+      // Call this user
+      this.setBitrate(128);
+      this.videocall.createOffer({
+        // We want bidirectional audio and video, plus data channels
+        tracks: [{ type: "audio", capture: true, recv: true }, { type: "video", capture: true, recv: true, simulcast: false }, { type: "data" }],
+        success: function (jsep: any) {
+          let body = { request: "call", username: toUser };
+          this.videocall.send({ message: body, jsep: jsep });
+          // Create a spinner waiting for the remote video
+          this.setBitrate(128);
+          resolve(true);
+        },
+        error: function (error: any) {
+          console.error("WebRTC error...", error);
+          reject(error);
+        },
+      });
+    });
+  };
+
+  public init = async (props: iJanusVideoCallProps) => {
+    if (props.bandwidth) {
+      this.bandwidth = props.bandwidth;
+    }
+
     return new Promise((resolve, reject) => {
       // Initialize the library (console debug enabled)
       let janus: any = this.janus;
@@ -221,8 +271,9 @@ export class JanusVideoCall {
                 },
                 onmessage: (msg: any, jsep: any) => {
                   if (jsep) {
-                    setBandwidth({ audio: 16, video: 64 }, jsep);
+                    setBandwidth(this.bandwidth, jsep);
                   }
+
                   console.info(" ::: Got a message :::", msg);
                   let result = msg["result"];
                   if (result) {

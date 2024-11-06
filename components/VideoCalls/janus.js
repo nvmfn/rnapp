@@ -33,6 +33,8 @@ Janus.extensionId = "hapfgfdkleiggjjpfpenajgdnfckjpaj";
 
 Janus.noop = function () {};
 
+let initTimerId = null;
+
 // Initialization
 Janus.init = function (options) {
   options = options || {};
@@ -41,6 +43,16 @@ Janus.init = function (options) {
     // Already initialized
     options.callback();
   } else {
+    // if (initTimerId) {
+    //   clearTimeout(initTimerId);
+    // }
+    // initTimerId = setTimeout(() => {
+    //   if (Janus.initDone === true) {
+    //     clearTimeout(initTimerId);
+    //     Janus.init(options);
+    //   }
+    // }, 300);
+
     if (typeof console == "undefined" || typeof console.log == "undefined") console = { log: function () {} };
     // Console logging (all debugging disabled by default)
     Janus.trace = Janus.noop;
@@ -175,6 +187,7 @@ Janus.init = function (options) {
     };
 
     Janus.initDone = true;
+    options.callback();
     // addJsList(["adapter.js"]);  // We may need others in the future
   }
 };

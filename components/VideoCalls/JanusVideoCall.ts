@@ -108,7 +108,7 @@ export class JanusVideoCall {
    */
   public setBitrate = (bitrate: number) => {
     if (this.videocall) {
-      this.videocall?.send({ message: { request: "set", bitrate: bitrate } });
+      this.videocall.send({ message: { request: "set", bitrate: bitrate } });
       return true;
     }
     return false;
@@ -145,20 +145,22 @@ export class JanusVideoCall {
    * @returns
    */
   public onDoCall = async (toUser: string) => {
+    // const videocall = this.videocall;
     return new Promise((resolve, reject) => {
       // Call this user
       this.setBitrate(128);
       this.videocall.createOffer({
         // We want bidirectional audio and video, plus data channels
         tracks: [{ type: "audio", capture: true, recv: true }, { type: "video", capture: true, recv: true, simulcast: false }, { type: "data" }],
-        success: function (jsep: any) {
+        success: (jsep: any) => {
           let body = { request: "call", username: toUser };
+
           this.videocall.send({ message: body, jsep: jsep });
           // Create a spinner waiting for the remote video
           this.setBitrate(128);
           resolve(true);
         },
-        error: function (error: any) {
+        error: (error: any) => {
           console.error("WebRTC error...", error);
           reject(error);
         },
@@ -317,6 +319,7 @@ export class JanusVideoCall {
                                 console.info("Got SDP!", jsep);
                               }
                               let body = { request: "accept" };
+
                               this.videocall.send({ message: body, jsep: jsep });
                               //   $("#peer").attr("disabled", true);
                               //   $("#call")
@@ -334,7 +337,10 @@ export class JanusVideoCall {
                           });
                         };
 
-                        props.onIncomingCall(this.answerToCall, this.doHangup);
+                        props.onIncomingCall(
+                          () => this.answerToCall(),
+                          () => this.doHangup()
+                        );
                       } else if (event === "accepted") {
                         let peer = escapeXmlTags(result["username"]);
                         if (!peer) {
@@ -366,6 +372,7 @@ export class JanusVideoCall {
                                   console.info("Got SDP!", jsep);
                                 }
                                 let body = { request: "set" };
+
                                 this.videocall.send({ message: body, jsep: jsep });
                               },
                               error: (error: any) => {
@@ -394,7 +401,6 @@ export class JanusVideoCall {
                         let substream = result["substream"];
                         let temporal = result["temporal"];
                         if ((substream !== null && substream !== undefined) || (temporal !== null && temporal !== undefined)) {
-                          // debugger;
                           console.error("Simulcast is not implemented yet", substream, temporal);
                           // @ToDo: Uncomment code and implement simulcast later
                           // if (!this.simulcastStarted) {

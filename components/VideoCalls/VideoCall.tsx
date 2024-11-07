@@ -2,7 +2,7 @@ import { MaterialIcons } from "@expo/vector-icons";
 import { Text, View, Pressable } from "react-native";
 import { mediaDevices, RTCView } from "react-native-webrtc";
 import { useState } from "react";
-import { iMediaDevice, JanusVideoCall } from "./JanusVideoCall";
+import { iFacingMode, iMediaDevice, JanusVideoCall } from "./JanusVideoCall";
 
 export interface iVideoCallProps {}
 
@@ -10,7 +10,7 @@ let janusVideoCall: JanusVideoCall = new JanusVideoCall();
 
 const btnStyles = {
   backgroundColor: `#ccc`,
-  padding: 10,
+  padding: 6,
   borderRadius: 5,
   margin: 5,
   borderColor: `#fff`,
@@ -18,7 +18,7 @@ const btnStyles = {
 
 const splitterStyles = {
   color: `#fff`,
-  paddingBottom: 10,
+  paddingBottom: 6,
 };
 
 export default function VideoCall(props: iVideoCallProps) {
@@ -99,8 +99,8 @@ export default function VideoCall(props: iVideoCallProps) {
     }
   };
 
-  const onDoCall = async (toUser: string) => {
-    janusVideoCall.onDoCall(toUser);
+  const onDoCall = async (toUser: string, facingMode?: iFacingMode, noVideo = false) => {
+    janusVideoCall.onDoCall(toUser, facingMode, noVideo);
   };
 
   const replaceTracks = async (target: iMediaDevice) => {
@@ -137,14 +137,66 @@ export default function VideoCall(props: iVideoCallProps) {
 
       <Text style={splitterStyles}>-----------------</Text>
       {myName === `me1` && (
-        <Pressable onPress={(e) => onDoCall(`me2`)}>
-          <Text style={btnStyles}>Call to me2</Text>
-        </Pressable>
+        <>
+          <Pressable
+            key={`a`}
+            onPress={(e) => {
+              onDoCall(`me2`, `environment`, true);
+              setIsVideoOn(true);
+            }}
+          >
+            <Text style={btnStyles}>Call: me2 - environment - video</Text>
+          </Pressable>
+          <Pressable
+            key={`b`}
+            onPress={(e) => {
+              onDoCall(`me2`, `front`, true);
+              setIsVideoOn(true);
+            }}
+          >
+            <Text style={btnStyles}>Call: me2 - front - video</Text>
+          </Pressable>
+          <Pressable
+            key={`c`}
+            onPress={(e) => {
+              onDoCall(`me2`, `front`, false);
+              setIsVideoOn(false);
+            }}
+          >
+            <Text style={btnStyles}>Call: me2 - front - audio</Text>
+          </Pressable>
+        </>
       )}
       {myName === `me2` && (
-        <Pressable onPress={(e) => onDoCall(`me1`)}>
-          <Text style={btnStyles}>Call to me1</Text>
-        </Pressable>
+        <>
+          <Pressable
+            key={`a`}
+            onPress={(e) => {
+              onDoCall(`me1`, `environment`, true);
+              setIsVideoOn(true);
+            }}
+          >
+            <Text style={btnStyles}>Call: me1 - environment - video</Text>
+          </Pressable>
+          <Pressable
+            key={`b`}
+            onPress={(e) => {
+              onDoCall(`me1`, `front`, true);
+              setIsVideoOn(true);
+            }}
+          >
+            <Text style={btnStyles}>Call: me1 - front - video</Text>
+          </Pressable>
+          <Pressable
+            key={`c`}
+            onPress={(e) => {
+              onDoCall(`me1`, `front`, false);
+              setIsVideoOn(false);
+            }}
+          >
+            <Text style={btnStyles}>Call: me1 - front - audio</Text>
+          </Pressable>
+        </>
       )}
 
       <Text style={splitterStyles}>-----------------</Text>
@@ -174,7 +226,13 @@ export default function VideoCall(props: iVideoCallProps) {
         .filter((d) => d.kind === `videoinput`)
         .map((d) => {
           return (
-            <Pressable key={d.deviceId} onPress={() => replaceTracks(d)}>
+            <Pressable
+              key={d.deviceId}
+              onPress={() => {
+                replaceTracks(d);
+                setIsVideoOn(true);
+              }}
+            >
               <Text style={btnStyles}>Use {d.facing}</Text>
             </Pressable>
           );

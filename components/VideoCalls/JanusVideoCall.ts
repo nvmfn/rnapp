@@ -92,6 +92,8 @@ export interface iMediaDevice {
   label: string;
 }
 
+export type iFacingMode = "environment" | `front`;
+
 async function sleep(ms: number) {
   return new Promise((resolve) => setTimeout(resolve, ms));
 }
@@ -181,8 +183,10 @@ export class JanusVideoCall {
     if (this.videocall) {
       this.videocall.send({ message: { request: "hangup" } });
       this.videocall.hangup();
+      console.log(`doHangup: done`);
       return true;
     }
+    console.warn(`doHangup: not in call`);
     return true;
   };
 
@@ -200,19 +204,7 @@ export class JanusVideoCall {
         { type: "audio", capture: true, recv: true },
       ],
     });
-    // this.doHangup();
-
-    // for (let i = 0; i < 1000; i++) {
-    //   if (this.isInCall === false) {
-    //     await sleep(200);
-    //     break;
-    //   }
-    //   console.log(`wait for hangup`);
-    //   await sleep(100);
-    // }
-
-    // console.log(`onDoCall again`, this.lastCallName, target.facing, this.videoenabled);
-    // await this.onDoCall(this.lastCallName, target.facing, this.videoenabled);
+    this.toogleVideo(true);
   };
 
   private lastCallName: string = "";
@@ -221,7 +213,7 @@ export class JanusVideoCall {
    * @param toUser - user name
    * @returns
    */
-  public onDoCall = async (toUser: string, facingMode?: string | undefined, noVideo = false) => {
+  public onDoCall = async (toUser: string, facingMode?: iFacingMode, noVideo = false) => {
     this.lastCallName = toUser;
     this.isInCall = true;
     // const videocall = this.videocall;

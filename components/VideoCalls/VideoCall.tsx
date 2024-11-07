@@ -2,7 +2,7 @@ import { MaterialIcons } from "@expo/vector-icons";
 import { Text, View, Pressable } from "react-native";
 import { mediaDevices, RTCView } from "react-native-webrtc";
 import { useState } from "react";
-import { JanusVideoCall } from "./JanusVideoCall";
+import { iMediaDevice, JanusVideoCall } from "./JanusVideoCall";
 
 export interface iVideoCallProps {}
 
@@ -24,12 +24,13 @@ const splitterStyles = {
 export default function VideoCall(props: iVideoCallProps) {
   const [myName, setMyName] = useState<string>();
   const [isInit, setIsInit] = useState<boolean>(false);
+  const [devices, setDevices] = useState<any[]>([]);
 
   const [selfViewSrc, setSelfViewSrc] = useState<any>(null);
   const [remoteViewSrc, setRemoteViewSrc] = useState<any>(null);
 
   const [callStatus, setCallStatus] = useState<any>(null);
-  const [isVideoOn, setIsVideoOn] = useState<boolean>(true);
+  const [isVideoOn, setIsVideoOn] = useState<boolean>(false);
   const [isAudioOn, setIsAudioOn] = useState<boolean>(true);
 
   const onRegister = async (username: string) => {
@@ -44,16 +45,24 @@ export default function VideoCall(props: iVideoCallProps) {
         bandwidth: {
           // Decrease bandwidth and video/audio quality
           // Set 0 for unlimited quality
-          audio: 32,
-          video: 64,
+          audio: 8,
+          video: 16,
         },
-        setLovalVideoStream: (stream: any) => {
-          console.log("setLovalVideoStream", stream);
+        setLocalVideoStream: (stream: any, trackId: any) => {
+          console.log("setLocalVideoStream", trackId, stream);
           setSelfViewSrc(stream.toURL());
         },
-        setRemoteVideoStream: (stream: any) => {
-          console.log("setRemoteVideoStream", stream);
+        removeLocalVideoStream: function (trackId: any): void {
+          console.log("removeLocalVideoStream", trackId);
+          // setSelfViewSrc(null);
+        },
+        setRemoteStream: (stream: any, mid: any, kind: `audio` | `video`) => {
+          console.log("setRemoteVideoStream", stream, mid, kind);
           setRemoteViewSrc(stream.toURL());
+        },
+        removeRemoteStream: (mid: any) => {
+          console.log("removeRemoteStream", mid);
+          // setRemoteViewSrc(null);
         },
         onWaitingForAnswer: () => {
           console.log("onWaitingForAnswer");
@@ -74,7 +83,14 @@ export default function VideoCall(props: iVideoCallProps) {
         onIncomingCall: (allow: any, hangup: any) => {
           allow(); // auto-accept
         },
+        onCleanup: function (): void {
+          console.log("ToDo: onCleanup ui");
+        },
       });
+
+      const devices = await janusVideoCall.getListDevices();
+      setDevices(devices);
+
       setIsInit(true);
     } catch (err) {
       console.error("Error JanusVideoCall", err);
@@ -85,6 +101,10 @@ export default function VideoCall(props: iVideoCallProps) {
 
   const onDoCall = async (toUser: string) => {
     janusVideoCall.onDoCall(toUser);
+  };
+
+  const replaceTracks = async (target: iMediaDevice) => {
+    janusVideoCall.replaceTracks(target);
   };
 
   if (!isInit) {
@@ -140,17 +160,25 @@ export default function VideoCall(props: iVideoCallProps) {
           <Text style={{ color: `#fff` }}>selfViewSrc:</Text>
           <RTCView key={`selfViewSrcKey`} streamURL={selfViewSrc} style={{ width: 100, height: 100 }} />
           <Pressable onPress={(e) => setIsVideoOn(janusVideoCall.toogleVideo())}>
-            <Text style={btnStyles}>toogleVideo {isVideoOn ? `on` : `off`}</Text>
+            <Text style={btnStyles}>My Video {isVideoOn ? `on` : `off`}</Text>
           </Pressable>
           <Pressable onPress={(e) => setIsAudioOn(janusVideoCall.toogleAudio())}>
-            <Text style={btnStyles}>Audio {isAudioOn ? `on` : `off`}</Text>
-          </Pressable>
-
-          <Pressable onPress={janusVideoCall.doHangup}>
-            <Text style={btnStyles}>Hangup</Text>
+            <Text style={btnStyles}>My Audio {isAudioOn ? `on` : `off`}</Text>
           </Pressable>
         </>
       )}
+      <Pressable onPress={janusVideoCall.doHangup}>
+        <Text style={btnStyles}>Hangup</Text>
+      </Pressable>
+      {devices
+        .filter((d) => d.kind === `videoinput`)
+        .map((d) => {
+          return (
+            <Pressable key={d.deviceId} onPress={() => replaceTracks(d)}>
+              <Text style={btnStyles}>Use {d.facing}</Text>
+            </Pressable>
+          );
+        })}
     </View>
   );
 }

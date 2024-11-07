@@ -55,15 +55,47 @@ function randomString(len: number): string {
 const iceServers = [{ urls: ["stun:stun.l.google.com:19302"] }];
 
 interface iJanusVideoCallProps {
-  setRemoteVideoStream: any;
-  onNewMediaState: any;
-  setLovalVideoStream: any;
-  onWaitingForAnswer: any;
-  onAcceptedCall: any;
-  onNewWebrtcState: any;
+  /**
+   * If remote stream is added
+   * @param stream
+   * @param mid - stream id
+   * @param kind - audio | video
+   * @returns
+   */
+  setRemoteStream: (stream: any, mid: any, kind: `audio` | `video`) => void;
+  /**
+   * If remote stream is removed
+   * @param mid - stream id
+   * @param kind
+   * @returns
+   */
+  removeRemoteStream: (mid: any, kind: `audio` | `video`) => void;
+  /**
+   * Cleanup
+   */
+  onCleanup: () => void;
+  onNewMediaState: (medium: any, on: any, mid: any) => void;
+  setLocalVideoStream: (stream: any, trackId: string) => void;
+  removeLocalVideoStream: (trackId: any) => void;
+  onWaitingForAnswer: () => void;
+  onAcceptedCall: () => void;
+  onNewWebrtcState: (on: any) => void;
   onIncomingCall: (allow: Function, hangup: Function) => void;
   bandwidth?: iBandwidth;
 }
+
+export interface iMediaDevice {
+  deviceId: string;
+  facing: string;
+  groupId: string;
+  kind: string;
+  label: string;
+}
+
+async function sleep(ms: number) {
+  return new Promise((resolve) => setTimeout(resolve, ms));
+}
+
 export class JanusVideoCall {
   public videocall: any = null;
   private opaqueId = "videocalltest-" + randomString(12);
@@ -83,6 +115,7 @@ export class JanusVideoCall {
 
   private audioenabled = false;
   private videoenabled = false;
+  private isInCall: boolean = false;
 
   private myusername = null;
   private yourusername: any = "";
@@ -90,6 +123,20 @@ export class JanusVideoCall {
   private doSimulcast: boolean = false;
   private simulcastStarted: any = false;
   private janus: any = null;
+
+  public getListDevices = async (): Promise<iMediaDevice[]> => {
+    return new Promise((resolve, reject) => {
+      try {
+        // @ts-ignore
+        Janus.listDevices((devices: any) => {
+          console.log(`devices`, devices);
+          resolve(devices);
+        });
+      } catch (e) {
+        console.error(`getListDevices error`, e);
+      }
+    });
+  };
 
   public janusDestroy = async () => {
     this.janus.destroy();
@@ -113,16 +160,16 @@ export class JanusVideoCall {
     }
     return false;
   };
-  public toogleVideo = () => {
-    this.videoenabled = !this.videoenabled;
+  public toogleVideo = (value?: boolean) => {
+    this.videoenabled = value === undefined ? !this.videoenabled : value;
     if (this.videocall) {
       this.videocall.send({ message: { request: "set", video: this.videoenabled } });
     }
     return this.videoenabled;
   };
 
-  public toogleAudio = () => {
-    this.audioenabled = !this.audioenabled;
+  public toogleAudio = (value?: boolean) => {
+    this.audioenabled = value === undefined ? !this.audioenabled : value;
     if (this.videocall) {
       this.videocall.send({ message: { request: "set", audio: this.audioenabled } });
     }
@@ -139,25 +186,71 @@ export class JanusVideoCall {
     return true;
   };
 
+  public replaceTracks = async (target: iMediaDevice) => {
+    // janusVideoCall.onDoCall(toUser);
+    console.log(`replaceTracks to`, target);
+    this.videocall.replaceTracks({
+      tracks: [
+        {
+          type: "video",
+          facingMode: target.facing,
+          capture: true,
+          recv: true,
+        },
+        { type: "audio", capture: true, recv: true },
+      ],
+    });
+    // this.doHangup();
+
+    // for (let i = 0; i < 1000; i++) {
+    //   if (this.isInCall === false) {
+    //     await sleep(200);
+    //     break;
+    //   }
+    //   console.log(`wait for hangup`);
+    //   await sleep(100);
+    // }
+
+    // console.log(`onDoCall again`, this.lastCallName, target.facing, this.videoenabled);
+    // await this.onDoCall(this.lastCallName, target.facing, this.videoenabled);
+  };
+
+  private lastCallName: string = "";
   /**
    * Call this user
    * @param toUser - user name
    * @returns
    */
-  public onDoCall = async (toUser: string) => {
+  public onDoCall = async (toUser: string, facingMode?: string | undefined, noVideo = false) => {
+    this.lastCallName = toUser;
+    this.isInCall = true;
     // const videocall = this.videocall;
     return new Promise((resolve, reject) => {
       // Call this user
-      this.setBitrate(128);
+
+      const video: any = {
+        type: "video",
+        capture: true,
+        recv: true,
+        simulcast: false,
+      };
+      if (facingMode) {
+        video.facingMode = facingMode;
+      }
+
       this.videocall.createOffer({
         // We want bidirectional audio and video, plus data channels
-        tracks: [{ type: "audio", capture: true, recv: true }, { type: "video", capture: true, recv: true, simulcast: false }, { type: "data" }],
+        tracks: [{ type: "audio", capture: true, recv: true }, video, { type: "data" }],
         success: (jsep: any) => {
           let body = { request: "call", username: toUser };
 
           this.videocall.send({ message: body, jsep: jsep });
           // Create a spinner waiting for the remote video
-          this.setBitrate(128);
+
+          if (noVideo) {
+            this.toogleVideo(false);
+          }
+
           resolve(true);
         },
         error: (error: any) => {
@@ -269,7 +362,7 @@ export class JanusVideoCall {
                   // $("#videoleft").parent().unblock();
                 },
                 slowLink: (uplink: any, lost: any, mid: any) => {
-                  console.warn("Janus reports problems " + (uplink ? "sending" : "receiving") + " packets on mid " + mid + " (" + lost + " lost packets)");
+                  // console.warn("Janus reports problems " + (uplink ? "sending" : "receiving") + " packets on mid " + mid + " (" + lost + " lost packets)");
                 },
                 onmessage: (msg: any, jsep: any) => {
                   if (jsep) {
@@ -296,9 +389,6 @@ export class JanusVideoCall {
                         // Get a list of available peers, just for fun
                         this.videocall.send({ message: { request: "list" } });
                         // Enable buttons to call now
-                        //   $("#phone").removeClass("invisible");
-                        //   $("#call").unbind("click").click(doCall);
-                        //   $("#peer").focus();
                       } else if (event === "calling") {
                         console.log("Waiting for the peer to answer...");
                         props.onWaitingForAnswer();
@@ -321,14 +411,6 @@ export class JanusVideoCall {
                               let body = { request: "accept" };
 
                               this.videocall.send({ message: body, jsep: jsep });
-                              //   $("#peer").attr("disabled", true);
-                              //   $("#call")
-                              //     .removeAttr("disabled")
-                              //     .html("Hangup")
-                              //     .removeClass("btn-success")
-                              //     .addClass("btn-danger")
-                              //     .unbind("click")
-                              //     .click(doHangup);
                             },
                             error: (error: any) => {
                               console.error("WebRTC error:", error);
@@ -387,15 +469,6 @@ export class JanusVideoCall {
                         // Reset status
 
                         this.videocall.hangup();
-                        //   $("#waitingvideo").remove();
-                        //   $("#videos").addClass("hide");
-                        //   $("#peer").removeAttr("disabled").val("");
-                        //   $("#call").removeAttr("disabled").html("Call").removeClass("btn-danger").addClass("btn-success").unbind("click").click(doCall);
-                        //   $("#toggleaudio").attr("disabled", true);
-                        //   $("#togglevideo").attr("disabled", true);
-                        //   $("#bitrate").attr("disabled", true);
-                        //   $("#curbitrate").addClass("hide");
-                        //   $("#curres").addClass("hide");
                       } else if (event === "simulcast") {
                         // Is simulcast in place?
                         let substream = result["substream"];
@@ -423,15 +496,6 @@ export class JanusVideoCall {
                     }
                     // TODO Reset status
                     this.videocall.hangup();
-                    //   $("#waitingvideo").remove();
-                    //   $("#videos").addClass("hide");
-                    //   $("#peer").removeAttr("disabled").val("");
-                    //   $("#call").removeAttr("disabled").html("Call").removeClass("btn-danger").addClass("btn-success").unbind("click").click(doCall);
-                    //   $("#toggleaudio").attr("disabled", true);
-                    //   $("#togglevideo").attr("disabled", true);
-                    //   $("#bitrate").attr("disabled", true);
-                    //   $("#curbitrate").addClass("hide");
-                    //   $("#curres").addClass("hide");
                     if (this.bitrateTimer) {
                       clearInterval(this.bitrateTimer);
                     }
@@ -441,10 +505,10 @@ export class JanusVideoCall {
                 onlocaltrack: (track: any, on: any) => {
                   // ---------- onlocaltrack
                   console.info("Local track " + (on ? "added" : "removed") + ":", track);
-                  // props.setLovalVideoStream(track);
+                  // props.setLocalVideoStream(track);
 
                   // We use the track ID as name of the element, but it may contain invalid characters
-                  let trackId = track.id.replace(/[{}]/g, "");
+                  const trackId: string = track.id.replace(/[{}]/g, "");
                   if (!on) {
                     // Track removed, get rid of the stream and the rendering
                     let stream = this.localTracks[trackId];
@@ -464,16 +528,9 @@ export class JanusVideoCall {
                       this.localVideos--;
                       if (this.localVideos === 0) {
                         // No video, at least for now: show a placeholder
-                        //   if ($("#videoleft .no-video-container").length === 0) {
-                        //     $("#videoleft").append(
-                        //       '<div class="no-video-container">' +
-                        //         '<i class="fa-solid fa-video fa-xl no-video-icon"></i>' +
-                        //         '<span class="no-video-text">No webcam available</span>' +
-                        //         "</div>"
-                        //     );
-                        //   }
                       }
                     }
+                    props.removeLocalVideoStream(trackId);
                     delete this.localTracks[trackId];
                     return;
                   }
@@ -483,21 +540,11 @@ export class JanusVideoCall {
                     // We've been here already
                     return;
                   }
-                  // if ($("#videoleft video").length === 0) {
-                  //   $("#videos").removeClass("hide");
-                  // }
+
                   if (track.kind === "audio") {
                     // We ignore local audio tracks, they'd generate echo anyway
                     if (this.localVideos === 0) {
                       // No video, at least for now: show a placeholder
-                      // if ($("#videoleft .no-video-container").length === 0) {
-                      //   $("#videoleft").append(
-                      //     '<div class="no-video-container">' +
-                      //       '<i class="fa-solid fa-video fa-xl no-video-icon"></i>' +
-                      //       '<span class="no-video-text">No webcam available</span>' +
-                      //       "</div>"
-                      //   );
-                      // }
                     }
                   } else {
                     // New video track: create a stream out of it
@@ -506,167 +553,57 @@ export class JanusVideoCall {
                     stream = new MediaStream([track]);
                     this.localTracks[trackId] = stream;
                     console.log("Created local stream:", stream);
-                    //   $("#videoleft").append(
-                    //     '<video class="rounded centered" id="myvideo' + trackId + '" width="100%" height="100%" autoplay playsinline muted="muted"/>'
-                    //   );
 
-                    props.setLovalVideoStream(stream);
-                    //   props.setVideoStream(stream);
-                    //   //   Janus.attachMediaStream(props.getVideoRef(), stream);
-                    //   //   Janus.attachMediaStream($("#myvideo" + trackId).get(0), stream);
+                    props.setLocalVideoStream(stream, trackId);
                   }
                   // if (this.videocall.webrtcStuff.pc.iceConnectionState !== "completed" && this.videocall.webrtcStuff.pc.iceConnectionState !== "connected") {
-                  //   console.log(`videoleft: Publishing...`);
-                  //   //   $("#videoleft")
-                  //   //     .parent()
-                  //   //     .block({
-                  //   //       message: "<b>Publishing...</b>",
-                  //   //       css: {
-                  //   //         border: "none",
-                  //   //         backgroundColor: "transparent",
-                  //   //         color: "white",
-                  //   //       },
-                  //   //     });
-                  // }
+                  console.log(`videoleft: Publishing...`);
                 },
                 // old / new name  onremotetrack
                 onremotetrack: (track: any, mid: any, on: any, metadata: any) => {
                   console.info("Remote track (mid=" + mid + ") " + (on ? "added" : "removed") + (metadata ? " (" + metadata.reason + ") " : "") + ":", track);
 
-                  // props.setRemoteVideoStream(track);
-                  // // return;
-
                   if (!on) {
+                    props.removeRemoteStream(mid, track?.kind);
                     // Track removed, get rid of the stream and the rendering
                     //   $("#peervideo" + mid).remove();
                     if (track?.kind === "video") {
                       this.remoteVideos--;
                       if (this.remoteVideos === 0) {
                         // No video, at least for now: show a placeholder
-                        //   if ($("#videoright .no-video-container").length === 0) {
-                        //     $("#videoright").append(
-                        //       '<div class="no-video-container">' +
-                        //         '<i class="fa-solid fa-video fa-xl no-video-icon"></i>' +
-                        //         '<span class="no-video-text">No remote video available</span>' +
-                        //         "</div>"
-                        //     );
-                        //   }
                       }
                     }
                     delete this.remoteTracks[mid];
+
                     return;
                   }
-                  // if ($("#peervideo" + mid).length > 0) return;
-                  // If we're here, a new track was added
-                  // $("#spinner").remove();
-                  let addButtons = false;
-                  // if ($("#videoright audio").length === 0 && $("#videoright video").length === 0) {
-                  //   addButtons = true;
-                  //   $("#videos").removeClass("hide");
-                  // }
+
                   if (track.kind === "audio") {
                     // New audio track: create a stream out of it, and use a hidden <audio> element
-                    //   let stream = new MediaStream([track]);
-                    //   this.remoteTracks[mid] = stream;
-                    //   console.log("Created remote audio stream:", stream);
-                    //   $("#videoright").append('<audio class="hide" id="peervideo' + mid + '" autoplay playsinline/>');
-                    //   Janus.attachMediaStream($("#peervideo" + mid).get(0), stream);
-                    //   props.setAudioStream(track);
+                    let stream = new MediaStream([track]);
+                    this.remoteTracks[mid] = stream;
+                    console.log("Created remote audio stream:", stream);
+
+                    props.setRemoteStream(stream, mid, track.kind);
 
                     if (this.remoteVideos === 0) {
                       // No video, at least for now: show a placeholder
-                      // if ($("#videoright .no-video-container").length === 0) {
-                      //   $("#videoright").append(
-                      //     '<div class="no-video-container">' +
-                      //       '<i class="fa-solid fa-video fa-xl no-video-icon"></i>' +
-                      //       '<span class="no-video-text">No webcam available</span>' +
-                      //       "</div>"
-                      //   );
-                      // }
                     }
                   } else {
                     // New video track: create a stream out of it
                     this.remoteVideos++;
-                    //   $("#videoright .no-video-container").remove();
                     let stream = new MediaStream([track]);
                     this.remoteTracks[mid] = stream;
                     console.log("Created remote video stream:", stream);
-                    //   $("#videoright").append('<video class="rounded centered" id="peervideo' + mid + '" width="100%" height="100%" autoplay playsinline/>');
-                    //   Janus.attachMediaStream($("#peervideo" + mid).get(0), stream);
-                    //   Janus.attachMediaStream(props.getVideoRef(), stream);
-
-                    // debugger;
-                    props.setRemoteVideoStream(stream);
-                    //   props.setVideoStream(stream);
-
-                    // Note: we'll need this for additional videos too
-                    if (!this.bitrateTimer) {
-                      // $("#curbitrate").removeClass("hide");
-                      // this.bitrateTimer = setInterval(() => {
-                      //   if (!$("#peervideo" + mid).get(0)) return;
-                      //   // Display updated bitrate, if supported
-                      // let bitrate = this.videocall.getBitrate();
-                      console.info("Current bitrate is ", this.videocall.getBitrate());
-                      //   $("#curbitrate").text(bitrate);
-                      //   // Check if the resolution changed too
-                      //   let width = $("#peervideo" + mid).get(0).videoWidth;
-                      //   let height = $("#peervideo" + mid).get(0).videoHeight;
-                      //   if (width > 0 && height > 0)
-                      //     $("#curres")
-                      //       .removeClass("hide")
-                      //       .text(width + "x" + height)
-                      //       .removeClass("hide");
-                      // }, 1000);
-                    }
+                    props.setRemoteStream(stream, mid, track.kind);
                   }
-                  if (!addButtons) return;
-                  // Enable audio/video buttons and bitrate limiter
-                  this.audioenabled = true;
-                  this.videoenabled = true;
-                  // $("#toggleaudio")
-                  //   .removeAttr("disabled")
-                  //   .click(() => {
-                  //     this.audioenabled = !this.audioenabled;
-                  //     if (this.audioenabled) {
-                  //       //   $("#toggleaudio").html("Disable audio").removeClass("btn-success").addClass("btn-danger");
-                  //     } else {
-                  //       //   $("#toggleaudio").html("Enable audio").removeClass("btn-danger").addClass("btn-success");
-                  //     }
-                  //     this.videocall.send({ message: { request: "set", audio: this.audioenabled } });
-                  //   });
-                  // $("#togglevideo")
-                  //   .removeAttr("disabled")
-                  //   .click(() => {
-                  //     this.videoenabled = !this.videoenabled;
-                  //     if (this.videoenabled) {
-                  //       //   $("#togglevideo").html("Disable video").removeClass("btn-success").addClass("btn-danger");
-                  //     } else {
-                  //       //   $("#togglevideo").html("Enable video").removeClass("btn-danger").addClass("btn-success");
-                  //     }
-                  //     this.videocall.send({ message: { request: "set", video: this.videoenabled } });
-                  //   });
-                  // $("#toggleaudio").parent().removeClass("hide");
-                  // $("#bitrate a")
-                  //   .removeAttr("disabled")
-                  //   .click(() => {
-                  //     // $(".dropdown-toggle").dropdown("hide");
-                  //     let id = $(this).attr("id");
-                  //     let bitrate = parseInt(id) * 1000;
-                  //     if (bitrate === 0) {
-                  //       console.log("Not limiting bandwidth via REMB");
-                  //     } else {
-                  //       console.log("Capping bandwidth to " + bitrate + " via REMB");
-                  //     }
-                  //     // $("#bitrateset").text($(this).text()).parent().removeClass("open");
-                  //     this.videocall.send({ message: { request: "set", bitrate: bitrate } });
-                  //     return false;
-                  //   });
+
+                  // this.audioenabled = true;
+                  // this.videoenabled = true;
                 },
                 // eslint-disable-next-line no-unused-vars
                 ondataopen: (label: any, protocol: any) => {
                   console.log("The DataChannel is available!");
-                  // $("#videos").removeClass("hide");
-                  // $("#datasend").removeAttr("disabled");
                 },
                 ondata: (data: any) => {
                   console.info("We got data from the DataChannel!", data);
@@ -692,13 +629,13 @@ export class JanusVideoCall {
                   this.bitrateTimer = null;
                   // $("#videos").addClass("hide");
                   this.simulcastStarted = false;
-                  // $("#simulcast").remove();
-                  // $("#peer").removeAttr("disabled").val("");
-                  // $("#call").removeAttr("disabled").html("Call").removeClass("btn-danger").addClass("btn-success").unbind("click").click(doCall);
+
                   this.localTracks = {};
                   this.localVideos = 0;
                   this.remoteTracks = {};
                   this.remoteVideos = 0;
+                  this.isInCall = false;
+                  props.onCleanup();
                 },
               });
             },

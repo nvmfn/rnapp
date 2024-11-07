@@ -302,6 +302,9 @@ Janus.mediaToTracks = function (media) {
 
 // Helper function to convert a track object to a set of constraints
 Janus.trackConstraints = function (track) {
+  const facingMode = track.facingMode;
+  delete track.facingMode;
+
   let constraints = {};
   if (!track || !track.capture) return constraints;
   if (track.type === "audio") {
@@ -358,6 +361,15 @@ Janus.trackConstraints = function (track) {
     // Use the provided capture object as video constraint
     constraints.video = track.capture;
   }
+  // debugger;
+  if (facingMode !== undefined && constraints.video) {
+    if (constraints.video === true) {
+      constraints.video = { facingMode: facingMode };
+    } else {
+      constraints.video.facingMode = facingMode;
+    }
+  }
+  console.log("new constraints", constraints);
   return constraints;
 };
 
